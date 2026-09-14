@@ -29,24 +29,6 @@ Helix Engine 不依赖、不妥协于 Visual Studio 脆弱的单线程 COM 代�
 
 动态 Polyfill：编译期自动补齐缺失的跨环依赖结构，并在后台无缝生成 Helix.cpp 注册表，全程对开发者透明。
 
-💻 快速示例 (Quick Peek)
-在业务代码中，只需像使用 C# 一样优雅地操纵底层内存：
-
-#include "Helix.h"
-
-// 标记需要进行虚拟化混淆保护的敏感函数
-Vmp void ProcessSecureData(void* buffer) {
-    // 跨环动态类型神匣，自适应解析虚表
-    Any target = New<NetworkPacket>(buffer);
-    
-    // O(1) 哈希反射，无视私有成员保护
-    auto proxy = Reflec(target);
-    proxy.SetValue("PacketId", 0x1337);
-    
-    // 直接执行间接系统调用或内核级内存投递
-    Write(targetPid, remoteAddress, target);
-}
-
 ⚠️ 适用场景 (Use Cases)
 本框架涉及极深的系统底层操作与编译管线劫持，建议在以下场景中使用：
 
