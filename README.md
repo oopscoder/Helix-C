@@ -93,3 +93,5 @@ Helix 是一套深度解耦、原生跨平台（Windows Ring 0/Ring 3, Linux, ma
       auto val = Read<int>(targetPid, remoteMem);// 读取
    
       auto arr = Read<AdvancedArrayNode[2]>(targetPid, remoteArrayAddr);
+
+更多使用，请参考使用例子。
