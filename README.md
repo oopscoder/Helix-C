@@ -32,7 +32,6 @@ Helix Engine 不依赖、不妥协于 Visual Studio 脆弱的单线程 COM 代�
 💻 快速示例 (Quick Peek)
 在业务代码中，只需像使用 C# 一样优雅地操纵底层内存：
 
-C++
 #include "Helix.h"
 
 // 标记需要进行虚拟化混淆保护的敏感函数
@@ -47,6 +46,7 @@ Vmp void ProcessSecureData(void* buffer) {
     // 直接执行间接系统调用或内核级内存投递
     Write(targetPid, remoteAddress, target);
 }
+
 ⚠️ 适用场景 (Use Cases)
 本框架涉及极深的系统底层操作与编译管线劫持，建议在以下场景中使用：
 
