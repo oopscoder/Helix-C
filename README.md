@@ -1,5 +1,6 @@
 # Helix-C
 🧬 Helix Engine - 使用例子在https://www.cnblogs.com/dalgleish/p/22510998
+
 Helix Engine 是一款专为极致性能与底层安全对抗打造的 C++ 静态反射与代码虚拟化（VMP）框架。
 
 本项目自带深度定制的 Visual Studio VSIX 扩展引擎。通过在后台无感调度独立 ClangSharp AST 解析器，Helix 为 C++ 赋予了全量的高级反射与元数据操控能力，同时保持了裸指针级别的极致运行速度。完美支持 Windows 内核态（Ring 0）与用户态（Ring 3）双轨开发，是构建底层反作弊（Anti-Cheat）、终端检测响应（EDR）及高级安全分析工具的绝佳基石。
