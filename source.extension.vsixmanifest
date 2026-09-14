@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" ?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
+    <Metadata>
+        <Identity Id="Helix_Framework.0b2abc0e-1866-4aac-bdd2-1fa584774391" Version="1.0" Language="zh-Hans" Publisher="热心市民" />
+        <DisplayName>Helix_Framework</DisplayName>
+        <Description xml:space="preserve">Helix 是一套深度解耦、原生跨平台（Windows Ring 0/Ring 3, Linux, macOS）的 C++ 安全开发框架。它通过 C# VSIX Clang AST 扫描器 在预编译阶段自动生成 Helix.h和Helix.cpp，实现无感知的垃圾回收（GC）、控制流平坦化混淆（VMP）、原生 API 导入解析以及反射注册。无Runtime库，语法标准要求至少C++20。</Description>
+    </Metadata>
+    <Installation>
+        <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.0, 18.0)">
+            <ProductArchitecture>amd64</ProductArchitecture>
+        </InstallationTarget>
+    </Installation>
+    <Dependencies>
+        <Dependency Id="Microsoft.Framework.NDP" DisplayName="Microsoft .NET Framework" d:Source="Manual" Version="[4.5,)" />
+    </Dependencies>
+    <Prerequisites>
+        <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[17.0,18.0)" DisplayName="Visual Studio core editor" />
+    </Prerequisites>
+    <Assets>
+        <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
+    </Assets>
+</PackageManifest>
