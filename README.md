@@ -1,4 +1,4 @@
-Helix Framework 跨平台大一统引擎开发指南，完整例子在https://www.cnblogs.com/dalgleish/p/22510998
+Helix Framework 跨平台大一统引擎开发指南，测试代码在Release下载区。
 
 1. 架构总览 (Architecture Overview)
 Helix 是一套深度解耦、原生跨平台（Windows Ring 0/Ring 3, Linux, macOS）的 C++ 安全开发框架。它通过 C# VSIX Clang AST 扫描器 在预编译阶段自动生成 Helix.cpp，实现无感知的垃圾回收（GC）、控制流平坦化混淆（VMP）、原生 API 导入解析以及反射注册。无额外的Runtime库，语法标准要求至少C++20。
