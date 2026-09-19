@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -11,6 +11,17 @@ namespace Helix
         public bool IsRebuildRequired(string projectPath, List<string> sourceFiles)
         {
             if (!projectCaches.TryGetValue(projectPath, out var cachedFiles)) return true;
+
+            if (File.Exists(projectPath))
+            {
+                var projInfo = new FileInfo(projectPath);
+                if (!cachedFiles.TryGetValue(projectPath, out var cachedProj) ||
+                    projInfo.LastWriteTimeUtc > cachedProj.Time ||
+                    projInfo.Length != cachedProj.Size)
+                {
+                    return true;
+                }
+            }
 
             foreach (string file in sourceFiles)
             {
@@ -30,6 +41,12 @@ namespace Helix
         public void UpdateCache(string projectPath, List<string> sourceFiles)
         {
             Dictionary<string, (DateTime, long)> newCache = [];
+
+            if (File.Exists(projectPath))
+            {
+                var projInfo = new FileInfo(projectPath);
+                newCache[projectPath] = (projInfo.LastWriteTimeUtc, projInfo.Length);
+            }
 
             foreach (string file in sourceFiles)
             {
