@@ -1,4 +1,4 @@
-﻿using ClangSharp;
+using ClangSharp;
 using ClangSharp.Interop;
 using System;
 using System.Collections.Concurrent;
@@ -18,7 +18,7 @@ namespace Helix
         public static HashSet<string> ExternNames = new();
         public static HashSet<string> DiscoveredReflectionRoots = new();
 
-        // [新增]: 并发 IO 内存缓存，彻底抹杀重复的磁盘读取放大
+        // 并发 IO 内存缓存，彻底抹杀重复的磁盘读取放大
         private readonly ConcurrentDictionary<string, byte[]> _ioCache = new();
 
         public string IntermediateDirectory { get; set; } = string.Empty;
@@ -41,13 +41,13 @@ namespace Helix
 #endif
         }
 
-        public Dictionary<string, ClassMetadata> Parse(List<string> sourceFiles, string projectDirectory, string platform, bool isKernelMode, Action<string> logger)
+        public Dictionary<string, ClassMetadata> Parse(List<string> sourceFiles, string projectDirectory, string platform, bool isKernelMode, bool enableCrossRing, Action<string> logger)
         {
             GlobalPointers.Clear();
             VmpTargets.Clear();
             ExternNames.Clear();
             DiscoveredReflectionRoots.Clear();
-            _ioCache.Clear(); // [新增]: 清理上一次编译的 IO 缓存
+            _ioCache.Clear();
 
             List<string> targetTypes = new List<string>();
 
@@ -68,13 +68,19 @@ namespace Helix
                         lock (targetTypes) { if (!targetTypes.Contains(rawType)) targetTypes.Add(rawType); }
                     };
 
+                    // 1. 核心关键字 (Reflec, Serialize 等) 始终需要提取
                     foreach (System.Text.RegularExpressions.Match match in s_keywordRegex.Matches(content))
                     {
                         cleanAndAdd(match.Groups[1].Value, true);
                     }
-                    foreach (System.Text.RegularExpressions.Match match in s_crossRingRegex.Matches(content))
+
+                    // 2. [彻底优化]: 仅在跨环开关开启时，才执行极度消耗算力的跨环特征码正则扫描！
+                    if (enableCrossRing)
                     {
-                        cleanAndAdd(match.Groups.Cast<System.Text.RegularExpressions.Group>().Skip(1).FirstOrDefault(g => g.Success)?.Value, false);
+                        foreach (System.Text.RegularExpressions.Match match in s_crossRingRegex.Matches(content))
+                        {
+                            cleanAndAdd(match.Groups.Cast<System.Text.RegularExpressions.Group>().Skip(1).FirstOrDefault(g => g.Success)?.Value, false);
+                        }
                     }
                 }
                 catch { }
@@ -83,12 +89,16 @@ namespace Helix
             var (passTarget, definedTarget) = RunSinglePass(sourceFiles, projectDirectory, platform, isKernelMode, targetTypes, true, logger);
 
             bool needsOppositePass = false;
-            foreach (var t in targetTypes)
+
+            if (enableCrossRing)
             {
-                if (!passTarget.ContainsKey(t) || passTarget[t].Size <= 0)
+                foreach (var t in targetTypes)
                 {
-                    needsOppositePass = true;
-                    break;
+                    if (!passTarget.ContainsKey(t) || passTarget[t].Size <= 0)
+                    {
+                        needsOppositePass = true;
+                        break;
+                    }
                 }
             }
 
@@ -104,7 +114,14 @@ namespace Helix
             }
             else
             {
-                LogDebug(logger, $"[Helix AST] All entities resolved in Target ring. Bypassing Opposite Pass (Lazy Evaluation)!");
+                if (!enableCrossRing)
+                {
+                    LogDebug(logger, $"[Helix AST] Cross-Ring macro disabled. Bypassing Opposite Pass entirely!");
+                }
+                else
+                {
+                    LogDebug(logger, $"[Helix AST] All entities resolved in Target ring. Bypassing Opposite Pass (Lazy Evaluation)!");
+                }
             }
 
             var finalRegistry = new Dictionary<string, ClassMetadata>();
@@ -790,7 +807,6 @@ namespace Helix
             {
                 CXSourceRange range = clang.getCursorExtent(cursor); clang.getRangeStart(range).GetFileLocation(out CXFile file, out _, out _, out _); string filePath = file.Name.ToString();
 
-                // [极速优化]: O(1) 内存穿透提取，拒绝磁盘轰炸
                 if (!_ioCache.TryGetValue(filePath, out byte[] fileBytes))
                 {
                     if (!System.IO.File.Exists(filePath)) return (blocks, liftedDecls);
