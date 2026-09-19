@@ -1,4 +1,4 @@
-﻿using EnvDTE;
+using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell;
@@ -389,8 +389,9 @@ namespace Helix
 
             bool forceRebuild = false;
 
-            // [极速优化]: 批量强存所有脏文档，彻底告别单文件 COM Interop 轮询！
             try { dteInstance.Documents.SaveAll(); } catch { }
+            try { if (!project.Saved) project.Save(); } catch { }
+            try { dteInstance.ExecuteCommand("File.SaveAll"); } catch { }
 
             foreach (string file in userFiles)
             {
@@ -406,7 +407,6 @@ namespace Helix
 
                     if (normText != normNewText)
                     {
-                        // 直接走底层 IO 穿透，强行解除只读属性并覆写
                         File.SetAttributes(file, FileAttributes.Normal);
                         using (FileStream fs = new FileStream(file, FileMode.Create, FileAccess.Write, FileShare.ReadWrite))
                         using (StreamWriter writer = new StreamWriter(fs, new UTF8Encoding(true)))
@@ -429,6 +429,7 @@ namespace Helix
                     codeGen.GenerateRuntimeHeader(ghostDir, LogToOutputWindow);
 
                     bool isKernelMode = false;
+                    bool enableCrossRing = false; // [新增] 跨环控制开关
                     string cppStandard = "-std=c++20";
                     try
                     {
@@ -461,6 +462,13 @@ namespace Helix
                         {
                             isKernelMode = true;
                         }
+
+                        // [极速优化]: 动态探测跨环宏开关
+                        if ((!string.IsNullOrEmpty(preprocessor) && preprocessor.Contains("HELIX_ENABLE_CROSS_RING")) ||
+                            xmlContent.Contains("HELIX_ENABLE_CROSS_RING"))
+                        {
+                            enableCrossRing = true;
+                        }
                     }
                     catch { }
 
@@ -474,9 +482,10 @@ namespace Helix
                         CppStandard = cppStandard
                     };
 
-                    Dictionary<string, ClassMetadata> registry = scanner.Parse(userFiles, projectDirectory, platformName, isKernelMode, LogToOutputWindow);
+                    // 传递跨环标志
+                    Dictionary<string, ClassMetadata> registry = scanner.Parse(userFiles, projectDirectory, platformName, isKernelMode, enableCrossRing, LogToOutputWindow);
 
-                    LogToOutputWindow($"[Helix] Full Scan complete. Target Mode: {(isKernelMode ? "Ring 0" : "Ring 3")}. Found {registry.Count} type(s).");
+                    LogToOutputWindow($"[Helix] Full Scan complete. Target Mode: {(isKernelMode ? "Ring 0" : "Ring 3")}. Cross-Ring: {(enableCrossRing ? "Enabled" : "Disabled")}. Found {registry.Count} type(s).");
 
                     List<string> headerFiles = userFiles.FindAll(file => file.EndsWith(".h", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".hpp", StringComparison.OrdinalIgnoreCase));
 
