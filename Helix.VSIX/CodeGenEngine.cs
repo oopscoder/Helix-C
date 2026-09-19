@@ -1040,7 +1040,6 @@ namespace Helix
                 inline auto MakeProxy(HelixAny& obj) { return ReflectorProxy<void>(&obj, obj.GetDynamicHash()); }
                 inline auto MakeProxy(const HelixAny& obj) { return ReflectorProxy<void>(&obj, obj.GetDynamicHash()); }
                 inline auto MakeProxy(HelixAny&& obj) { return ReflectorProxy<void>(&obj, obj.GetDynamicHash()); }
-                // =========================================================================
             }
 
             using Any = HelixRuntime::HelixAny;
