@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -347,7 +347,6 @@ namespace Helix
             cppBuilder.AppendLine("        }");
             cppBuilder.AppendLine("    }");
 
-            // [终极修复] 全量升级生成的函数签名为 uint64_t，彻底碾碎 C2397 报错
             cppBuilder.AppendLine("    uint64_t GetFieldTypeHash(uint64_t classHash, uint64_t fieldHash) {");
             bool isFirst = true;
             foreach (var meta in validMetas)
@@ -367,7 +366,6 @@ namespace Helix
             cppBuilder.AppendLine("        return 0;");
             cppBuilder.AppendLine("    }");
 
-            // [终极修复]
             cppBuilder.AppendLine("    void* GetMethodPtr(uint64_t classHash, uint64_t methodHash) {");
             isFirst = true;
             foreach (var meta in validMetas)
@@ -406,7 +404,6 @@ namespace Helix
             cppBuilder.AppendLine("        return nullptr;");
             cppBuilder.AppendLine("    }");
 
-            // [终极修复]
             cppBuilder.AppendLine("    bool VerifyMethodParams(uint64_t classHash, uint64_t methodHash, const uint64_t* pHashes, size_t count) {");
             isFirst = true;
             foreach (var meta in validMetas)
@@ -890,6 +887,36 @@ namespace Helix
                     }
                     template<typename ValT> bool SetValue(const char* path, ValT val) { uint64_t cHash; void* ptr = ResolvePath(path, cHash, false); if(ptr){ *(ValT*)ptr = val; return true; } return false; }
                     template<typename ValT> ValT GetValue(const char* path, ValT def = {}) { uint64_t cHash; void* ptr = ResolvePath(path, cHash, false); if(ptr) return *(ValT*)ptr; return def; }
+                    
+                    // [新增]: 纯元数据 O(1) 物理偏移探测，无视 nullptr 实例，完美兼容 Offset 宏占位
+                    intptr_t GetOffset(const char* path) {
+                        uint64_t cHash = rootClassHash;
+                        intptr_t totalOffset = 0;
+                        const char* p = path;
+                        while(*p) {
+                            const char* dot = p; while(*dot && *dot != '.') dot++;
+                            uint64_t nodeHash = HashStr(p, dot - p);
+                            auto meta = HelixGenerated::GetDB().Get(cHash); bool found = false;
+                            if(!meta) return -1;
+                            for(size_t i=0; i<meta->Fields.size(); ++i) {
+                                if (meta->Fields[i].nameHash == nodeHash) {
+                                    totalOffset += meta->Fields[i].offset;
+                                    p = dot; if(*p == '.') p++;
+                                    if (meta->Fields[i].isPointer) {
+                                        if (*p != '\0') {
+                                            // 跨越指针界限，之后的偏移相对新指针基址重新计算
+                                            totalOffset = 0; 
+                                        }
+                                    }
+                                    cHash = HelixGenerated::GetFieldTypeHash(cHash, nodeHash);
+                                    found = true; break;
+                                }
+                            }
+                            if(!found) return -1;
+                        }
+                        return totalOffset;
+                    }
+
                     template<typename Ret = void, typename... Args> Ret Invoke(const char* path, Args... args) {
                         char objPath[256] = {0}; const char* lastDot = nullptr; const char* tmp = path;
                         while(*tmp) { if(*tmp == '.') lastDot = tmp; tmp++; }
@@ -912,10 +939,18 @@ namespace Helix
                 template<typename T> struct UnwrapHelixRef<T*> { using type = T; static T* get(T* const& obj) { return (T*)obj; } };
                 template<typename T> struct UnwrapHelixRef<HelixRef<T>> { using type = T; static T* get(HelixRef<T>& obj) { return &(*obj); } };
                 
+                // 1. 捕获常规左值 (如: 栈对象, 局部指针变量 p, HelixRef)
                 template<typename T>
                 inline ReflectorProxy<typename StripModifiers<typename UnwrapHelixRef<typename remove_reference<T>::type>::type>::type> MakeProxy(T& obj) {
                     using RawT = typename StripModifiers<typename UnwrapHelixRef<typename remove_reference<T>::type>::type>::type;
                     return ReflectorProxy<RawT>((RawT*)UnwrapHelixRef<typename remove_reference<T>::type>::get(obj));
+                }
+
+                // 2. [新增]: 专门捕获临时右值指针，完美支持 Reflec((T*)nullptr) 语法
+                template<typename T>
+                inline ReflectorProxy<typename StripModifiers<T>::type> MakeProxy(T* obj) {
+                    using RawT = typename StripModifiers<T>::type;
+                    return ReflectorProxy<RawT>((RawT*)obj);
                 }
                 
                 inline auto MakeProxy(void* obj, const char* typeName) {
@@ -995,16 +1030,34 @@ namespace Helix
                     ~HelixAny() { if (ptr) { GC::RemoveRoot(ptr); ptr = nullptr; GC::CollectLocal(); } }
                     
                     uint64_t GetDynamicHash() const { return typeHash; }
-                    void* GetPtr() const { return ptr; }
+
+                    // =======================================================
+                    // [黑魔法]: 延迟推导代理，完美接管 *any 解包动作
+                    // =======================================================
+                    struct DerefProxy {
+                        void* p;
+                        // 当编译器尝试将代理赋值给目标对象时，瞬间完成类型推导与强转解引用
+                        template<typename U> operator U&() const { return *(U*)p; }
+                    };
+
+                    // 1. 拦截 & 操作符，直接返回底层原始物理指针 (彻底干掉 GetPtr)
+                    void* operator&() const { return ptr; }
+                    
+                    // 2. 拦截 * 操作符，返回推导代理，实现自动类型推导解引用
+                    DerefProxy operator*() const { return { ptr }; }
+                    
                     template<typename U> operator U*() const { return (U*)ptr; }
                     operator void*() const { return ptr; }
                     bool operator!=(decltype(nullptr)) const { return ptr != nullptr; }
                     bool operator==(decltype(nullptr)) const { return ptr == nullptr; }
                 };
                 
-                inline auto MakeProxy(HelixAny& obj) { return ReflectorProxy<void>(obj.GetPtr(), obj.GetDynamicHash()); }
-                inline auto MakeProxy(const HelixAny& obj) { return ReflectorProxy<void>(obj.GetPtr(), obj.GetDynamicHash()); }
-                inline auto MakeProxy(HelixAny&& obj) { return ReflectorProxy<void>(obj.GetPtr(), obj.GetDynamicHash()); }
+                // =======================================================
+                // 同步更新 MakeProxy 引擎，使用 &obj 获取原始指针
+                // =======================================================
+                inline auto MakeProxy(HelixAny& obj) { return ReflectorProxy<void>(&obj, obj.GetDynamicHash()); }
+                inline auto MakeProxy(const HelixAny& obj) { return ReflectorProxy<void>(&obj, obj.GetDynamicHash()); }
+                inline auto MakeProxy(HelixAny&& obj) { return ReflectorProxy<void>(&obj, obj.GetDynamicHash()); }
                 // =========================================================================
             }
 
