@@ -624,13 +624,11 @@ namespace Helix
                 #pragma warning(disable : 4458 4100 4595 4456 4189 4702 4701 4703 4273 4005 4083 4065)
             #endif
 
-            // 双轨制隔离: Ring 3 继续使用标准库，Ring 0 彻底切断以规避异常机制崩溃！
             #ifndef _KERNEL_MODE
                 #include <typeinfo>
                 #include <type_traits>
             #endif
 
-            // 系统原生基建前置: 完美融合 Windows.h 等通用头文件！
             #ifndef __clang__
                 #ifndef _KERNEL_MODE
                     #ifndef UMDF_USING_NTSTATUS
@@ -665,7 +663,6 @@ namespace Helix
                 #endif
             #endif
 
-            // 1. 包含底层的抽象平台接口
             #include "Core/CoreDefines.h"
             #include "Core/Collections.h"
             #include "Core/ReflectionTypes.h"
@@ -674,7 +671,6 @@ namespace Helix
             #include "Core/System.h"
             #include "Core/VmpCore.h"
 
-            // Ring 0 内核级 Placement New: 用于无缝提取类的真实虚表
             #ifdef _KERNEL_MODE
             #ifndef __PLACEMENT_NEW_INLINE
             #define __PLACEMENT_NEW_INLINE
@@ -683,7 +679,6 @@ namespace Helix
             #endif
             #endif
 
-            // 2. 使用 static 在 BSS 段分配 Platform
             #if defined(_WIN32) && defined(_KERNEL_MODE)
                 #include "HAL/Windows/WinKernelProvider.hpp"
                 #define HELIX_PLATFORM_INIT(ctx) static HelixRuntime::HAL::WinKernelProvider s_prov; HelixRuntime::HAL::SetPlatform(&s_prov)
@@ -888,7 +883,6 @@ namespace Helix
                     template<typename ValT> bool SetValue(const char* path, ValT val) { uint64_t cHash; void* ptr = ResolvePath(path, cHash, false); if(ptr){ *(ValT*)ptr = val; return true; } return false; }
                     template<typename ValT> ValT GetValue(const char* path, ValT def = {}) { uint64_t cHash; void* ptr = ResolvePath(path, cHash, false); if(ptr) return *(ValT*)ptr; return def; }
                     
-                    // [新增]: 纯元数据 O(1) 物理偏移探测，无视 nullptr 实例，完美兼容 Offset 宏占位
                     intptr_t GetOffset(const char* path) {
                         uint64_t cHash = rootClassHash;
                         intptr_t totalOffset = 0;
@@ -904,7 +898,6 @@ namespace Helix
                                     p = dot; if(*p == '.') p++;
                                     if (meta->Fields[i].isPointer) {
                                         if (*p != '\0') {
-                                            // 跨越指针界限，之后的偏移相对新指针基址重新计算
                                             totalOffset = 0; 
                                         }
                                     }
@@ -939,14 +932,12 @@ namespace Helix
                 template<typename T> struct UnwrapHelixRef<T*> { using type = T; static T* get(T* const& obj) { return (T*)obj; } };
                 template<typename T> struct UnwrapHelixRef<HelixRef<T>> { using type = T; static T* get(HelixRef<T>& obj) { return &(*obj); } };
                 
-                // 1. 捕获常规左值 (如: 栈对象, 局部指针变量 p, HelixRef)
                 template<typename T>
                 inline ReflectorProxy<typename StripModifiers<typename UnwrapHelixRef<typename remove_reference<T>::type>::type>::type> MakeProxy(T& obj) {
                     using RawT = typename StripModifiers<typename UnwrapHelixRef<typename remove_reference<T>::type>::type>::type;
                     return ReflectorProxy<RawT>((RawT*)UnwrapHelixRef<typename remove_reference<T>::type>::get(obj));
                 }
 
-                // 2. [新增]: 专门捕获临时右值指针，完美支持 Reflec((T*)nullptr) 语法
                 template<typename T>
                 inline ReflectorProxy<typename StripModifiers<T>::type> MakeProxy(T* obj) {
                     using RawT = typename StripModifiers<T>::type;
@@ -979,7 +970,6 @@ namespace Helix
                     return realHash;
                 }
                 
-                // ================== [ Any 动态多态神匣 ] ==================
                 class HelixAny {
                     void* ptr;
                     uint64_t typeHash;
@@ -1031,19 +1021,14 @@ namespace Helix
                     
                     uint64_t GetDynamicHash() const { return typeHash; }
 
-                    // =======================================================
-                    // [黑魔法]: 延迟推导代理，完美接管 *any 解包动作
-                    // =======================================================
+
                     struct DerefProxy {
                         void* p;
-                        // 当编译器尝试将代理赋值给目标对象时，瞬间完成类型推导与强转解引用
                         template<typename U> operator U&() const { return *(U*)p; }
                     };
 
-                    // 1. 拦截 & 操作符，直接返回底层原始物理指针 (彻底干掉 GetPtr)
                     void* operator&() const { return ptr; }
                     
-                    // 2. 拦截 * 操作符，返回推导代理，实现自动类型推导解引用
                     DerefProxy operator*() const { return { ptr }; }
                     
                     template<typename U> operator U*() const { return (U*)ptr; }
@@ -1052,16 +1037,12 @@ namespace Helix
                     bool operator==(decltype(nullptr)) const { return ptr == nullptr; }
                 };
                 
-                // =======================================================
-                // 同步更新 MakeProxy 引擎，使用 &obj 获取原始指针
-                // =======================================================
                 inline auto MakeProxy(HelixAny& obj) { return ReflectorProxy<void>(&obj, obj.GetDynamicHash()); }
                 inline auto MakeProxy(const HelixAny& obj) { return ReflectorProxy<void>(&obj, obj.GetDynamicHash()); }
                 inline auto MakeProxy(HelixAny&& obj) { return ReflectorProxy<void>(&obj, obj.GetDynamicHash()); }
                 // =========================================================================
             }
 
-            // 3. 暴露给业务层的语法糖 (inline 隔离防碰撞)
             using Any = HelixRuntime::HelixAny;
             template<typename T, typename... Args> inline auto New(Args&&... args) { return HelixRuntime::SmartNew<T>(HelixRuntime::forward<Args>(args)...); }
             template<typename... Args> inline auto Reflec(Args&&... args) { return HelixRuntime::MakeProxy(HelixRuntime::forward<Args>(args)...); }
